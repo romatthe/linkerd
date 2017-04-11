@@ -1,0 +1,104 @@
+
+version: 2
+jobs:
+  build:
+    docker:
+      - image: openjdk:8
+        environment:
+          CI_TERRIBLENESS: 30.seconds
+        parallelism: 2
+    working_directory: ~/linkerd
+    steps:
+      - checkout
+
+      - setup_remote_docker
+
+      - restore_cache:
+          key: linkerd-{{ checksum "project/LinkerdBuild.scala" }}-{{ checksum "admin/src/main/resources/io/buoyant/admin/package.json" }}
+
+      - run:
+          name: Install Docker client
+          command: |
+            set -x
+            if [ ! -f docker-17.03.0-ce.tgz ]; then
+              curl -sLO https://get.docker.com/builds/Linux/x86_64/docker-17.03.0-ce.tgz
+            fi
+            tar -xz -C /tmp -f docker-17.03.0-ce.tgz
+            mv /tmp/docker/* /usr/bin
+
+      - run:
+          name: Install nodejs
+          command: |
+            set -x
+            if [ ! -f node-v6.10.2-linux-x64.tar.xz ]; then
+              curl -sLO https://nodejs.org/dist/v6.10.2/node-v6.10.2-linux-x64.tar.xz
+            fi
+            tar -xf node-v6.10.2-linux-x64.tar.xz
+            cp -a node-v6.10.2-linux-x64/* /usr/
+
+      - run:
+          name: Install protoc
+          command: |
+            set -x
+            if [ ! -f protoc-3.1.0-linux-x86_64.zip ]; then
+              curl -sLO https://github.com/google/protobuf/releases/download/v3.1.0/protoc-3.1.0-linux-x86_64.zip
+            fi
+            unzip -p protoc-3.1.0-linux-x86_64.zip bin/protoc > /bin/protoc
+            chmod 755 /bin/protoc
+
+      - run:
+          name: Install sbt dependencies
+          command: |
+            sh -x ci/update.sh
+
+      - run:
+          name: Install nodejs/npm dependencies
+          command: |
+            set -x
+            cd admin/src/main/resources/io/buoyant/admin
+            npm install
+
+      - run:
+          name: Run npm tests
+          command: |
+            set -x
+            if [ "$CIRCLE_NODE_INDEX" == "0" ]; then
+              cd admin/src/main/resources/io/buoyant/admin
+              npm run eslint
+              npm test
+            fi
+
+      - run:
+          name: Run unit and e2e tests
+          command: |
+            sh -x ci/test.sh
+
+      - save_cache:
+          key: linkerd-{{ checksum "project/LinkerdBuild.scala" }}-{{ checksum "admin/src/main/resources/io/buoyant/admin/package.json" }}
+          paths:
+            - "docker-17.03.0-ce.tgz"
+            - "node-v6.10.2-linux-x64.tar.xz"
+            - "protoc-3.1.0-linux-x86_64.zip"
+            - "~/.gitshas"
+            - "~/.ivy2"
+            - "~/.sbt"
+            - ".sbt-launch.jar"
+            - "admin/src/main/resources/io/buoyant/admin/node_modules"
+
+      - deploy:
+          name: Publish coverage
+          command: |
+            set -x
+            ci/coverage-publish.sh || true # We don't want to block the build on a failure to publish coverage results
+            mkdir -p "/tmp/test-results/junit"
+            find . -type f -regex ".*/target/test-reports/.*xml" -exec cp {} "/tmp/test-results/junit/" \;
+
+      - deploy:
+          name: Publish Docker
+          command: |
+            if [ "$CIRCLE_BRANCH" == "master" ] && [ "$NIGHTLY" == "1" ]; then
+              ci/docker-publish.sh nightly
+            fi
+
+      - store_test_results:
+          path: /tmp/test-results
