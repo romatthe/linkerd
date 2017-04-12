@@ -3,19 +3,33 @@ version: 2
 jobs:
   build:
     docker:
+      # openjdk provides Scala dependencides. We may want to consider rolling
+      # our own image to also include JavaScript dependencies. Would speed up CI
+      # at the cost of maintaining a Docker image.
       - image: openjdk:8
         environment:
           CI_TERRIBLENESS: 30.seconds
+        # Run two containers, $CIRCLE_NODE_TOTAL = 2, $CIRCLE_NODE_INDEX = [0|1]
         parallelism: 2
     working_directory: ~/linkerd
+    # All run steps execute in both containers unless otherwise specified.
+    # Deploy steps execute on container 0.
     steps:
+      # Check out linkerd source code into ~/linkerd.
       - checkout
 
+      # This allows us to run docker commands Since we're already in a docker
+      # container, this step sets up a remote docker environment for us.
       - setup_remote_docker
 
+      # Restore build dependencies and downloaded files from the save_cache
+      # step. We use LinkerdBuild.scala as a proxy for Scala dependency changes,
+      # and package.json as a proxy for JavaScript dependency changes.
       - restore_cache:
           key: linkerd-{{ checksum "project/LinkerdBuild.scala" }}-{{ checksum "admin/src/main/resources/io/buoyant/admin/package.json" }}
 
+      # Install Docker client to enable running commands on the remote Docker,
+      # set up above.
       - run:
           name: Install Docker client
           command: |
@@ -26,8 +40,9 @@ jobs:
             tar -xz -C /tmp -f docker-17.03.0-ce.tgz
             mv /tmp/docker/* /usr/bin
 
+      # Download and install Node.js. Skip download if already in cache.
       - run:
-          name: Install nodejs
+          name: Install Node.js
           command: |
             set -x
             if [ ! -f node-v6.10.2-linux-x64.tar.xz ]; then
@@ -36,6 +51,7 @@ jobs:
             tar -xf node-v6.10.2-linux-x64.tar.xz
             cp -a node-v6.10.2-linux-x64/* /usr/
 
+      # Download and install protoc. Skip download if already in cache.
       - run:
           name: Install protoc
           command: |
@@ -46,18 +62,22 @@ jobs:
             unzip -p protoc-3.1.0-linux-x86_64.zip bin/protoc > /bin/protoc
             chmod 755 /bin/protoc
 
+      # Run ./sbt update, optionally run ./ci/twitter-develop.sh if
+      # $TWITTER_DEVELOP is set. Dependencies may already be in cache.
       - run:
           name: Install sbt dependencies
           command: |
             sh -x ci/update.sh
 
+      # Download and install npm dependencies. They may already be in cache.
       - run:
-          name: Install nodejs/npm dependencies
+          name: Install Node.js and npm dependencies
           command: |
             set -x
             cd admin/src/main/resources/io/buoyant/admin
             npm install
 
+      # Run npm linting and tests on container 0 only.
       - run:
           name: Run npm tests
           command: |
@@ -68,11 +88,15 @@ jobs:
               npm test
             fi
 
+      # Run unit and e2e tests in parallel. ci/test.sh will execute unit tests
+      # on container 0 and e2e tests on container 1.
       - run:
           name: Run unit and e2e tests
           command: |
             sh -x ci/test.sh
 
+      # Save downloaded files and build dependencies, keyed off of files most
+      # relevant to dependency changes.
       - save_cache:
           key: linkerd-{{ checksum "project/LinkerdBuild.scala" }}-{{ checksum "admin/src/main/resources/io/buoyant/admin/package.json" }}
           paths:
@@ -90,9 +114,9 @@ jobs:
           command: |
             set -x
             ci/coverage-publish.sh || true # We don't want to block the build on a failure to publish coverage results
-            mkdir -p "/tmp/test-results/junit"
-            find . -type f -regex ".*/target/test-reports/.*xml" -exec cp {} "/tmp/test-results/junit/" \;
 
+      # If a nightly build on master branch, publish "nightly" containers to
+      # Docker hub.
       - deploy:
           name: Publish Docker
           command: |
@@ -100,5 +124,14 @@ jobs:
               ci/docker-publish.sh nightly
             fi
 
+      # Gather test reports for store_test_results step.
+      - deploy:
+          name: Gather test reports
+          command: |
+            set -x
+            mkdir -p "/tmp/test-results/junit"
+            find . -type f -regex ".*/target/test-reports/.*xml" -exec cp {} "/tmp/test-results/junit/" \;
+
+      # Store test results from previous step.
       - store_test_results:
           path: /tmp/test-results
