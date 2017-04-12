@@ -23,8 +23,8 @@ trait SvcConfig {
   @JsonIgnore
   def params(vars: Map[String, String]): Stack.Params = Stack.Params.empty
     .maybeWith(totalTimeoutMs.map(timeout => TotalTimeout.Param(timeout.millis)))
-    .maybeWith(retries.flatMap(_.mkBackoff))
-    .maybeWith(retries.flatMap(_.mkBudget))
+    .maybeWith(retries.flatMap(_.mkBackoff)) +
+    retries.flatMap(_.mkBudget).getOrElse(RetryBudgetConfig.defaultBudget)
 }
 
 case class RetriesConfig(
@@ -36,10 +36,9 @@ case class RetriesConfig(
   def mkBackoff: Option[ClassifiedRetries.Backoffs] =
     backoff.map(_.mk).map(ClassifiedRetries.Backoffs(_))
 
-  // We use an empty backoff for Retries.Budget, since this informs
-  // _requeue_ delay. Requeues are explicitly for Nacks and
-  // non-application-level failures, and so we want to reenqueue
-  // these as quickly as possible.
+  // The backoff here is a _requeue_ backoff and not used by the path stack.
+  // See ClassifieredRetries.Backoffs for the backoff that is actually used in
+  // the path stack.
   @JsonIgnore
   def mkBudget: Option[Retries.Budget] =
     budget.map { b => Retries.Budget(b.mk, Backoff.const(Duration.Zero)) }
@@ -84,4 +83,8 @@ case class RetryBudgetConfig(
     val ttl = ttlSecs.map(_.seconds).getOrElse(10.seconds)
     RetryBudget(ttl, minRetriesPerSec.getOrElse(10), percentCanRetry.getOrElse(0.2))
   }
+}
+
+object RetryBudgetConfig {
+  def defaultBudget: Retries.Budget = Retries.Budget(RetryBudget(), Backoff.const(Duration.Zero))
 }

@@ -4,7 +4,7 @@ import com.twitter.finagle._
 import com.twitter.finagle.buoyant._
 import com.twitter.finagle.client._
 import com.twitter.finagle.server.StackServer
-import com.twitter.finagle.service.{FailFastFactory, Retries, RetryBudget, StatsFilter}
+import com.twitter.finagle.service.{FailFastFactory, Retries, StatsFilter}
 import com.twitter.finagle.stack.Endpoint
 import com.twitter.finagle.stats.DefaultStatsReceiver
 import com.twitter.util.{Future, Time}
@@ -183,8 +183,7 @@ trait StdStackRouter[Req, Rsp, This <: StdStackRouter[Req, Rsp, This]]
       val parameters = Seq(
         implicitly[Stack.Param[DstBindingFactory.Capacity]],
         implicitly[Stack.Param[DstBindingFactory.Namer]],
-        implicitly[Stack.Param[param.Stats]],
-        implicitly[Stack.Param[Retries.Budget]]
+        implicitly[Stack.Param[param.Stats]]
       )
 
       def make(
@@ -206,15 +205,6 @@ trait StdStackRouter[Req, Rsp, This <: StdStackRouter[Req, Rsp, This]]
         val Originator.Param(originator) = params[Originator.Param]
         if (originator) { stats.provideGauge("originator")(1f) }
 
-        // Since the retry budget is shared across the path stack
-        // (RetryFilter) and client stack (RequeueFilter), the lower
-        // filter must not deposit into the budget. So, we wrap it in
-        // a WithdrawOnlyRetryBudget.
-        val withdrawOnlyBudget = {
-          val Retries.Budget(budget, requeueBackoffs) = params[Retries.Budget]
-          Retries.Budget(new StackRouter.WithdrawOnlyRetryBudget(budget), requeueBackoffs)
-        }
-
         def pathMk(dst: Dst.Path, sf: ServiceFactory[Req, Rsp]) = {
           val sr = stats.scope("dst", "path", dst.path.show.stripPrefix("/"))
           val stk = pathStack ++ Stack.Leaf(Endpoint, sf)
@@ -225,7 +215,7 @@ trait StdStackRouter[Req, Rsp, This <: StdStackRouter[Req, Rsp, This]]
 
         def boundMk(bound: Dst.Bound, sf: ServiceFactory[Req, Rsp]) = {
           val stk = (boundStack ++ Stack.Leaf(Endpoint, sf))
-          stk.make(params + withdrawOnlyBudget + bound)
+          stk.make(params + bound)
         }
 
         def mkClientLabel(bound: Name.Bound): String = bound.id match {
@@ -242,7 +232,7 @@ trait StdStackRouter[Req, Rsp, This <: StdStackRouter[Req, Rsp, This]]
           }
           val clientParams = params[StackRouter.Client.PerClientParams].paramsFor(name)
           // client stats are scoped by label within .newClient
-          client.withParams(params ++ clientParams + clientStats + withdrawOnlyBudget)
+          client.withParams(params ++ clientParams + clientStats)
             .newClient(bound, mkClientLabel(bound))
         }
 
@@ -266,20 +256,6 @@ trait StdStackRouter[Req, Rsp, This <: StdStackRouter[Req, Rsp, This]]
 }
 
 object StackRouter {
-
-  /**
-   * A single budget needs to be shared across a `RequeueFilter` and
-   * a `RetryFilter` for debiting purposes, but we only want one of
-   * the calls to `RetryBudget.request()` to count. This allows for
-   * swallowing the call to `request` in the second filter.
-   *
-   * Copied from com.twitter.finagle.service.Retries.
-   */
-  class WithdrawOnlyRetryBudget(underlying: RetryBudget) extends RetryBudget {
-    def deposit(): Unit = ()
-    def tryWithdraw(): Boolean = underlying.tryWithdraw()
-    def balance: Long = underlying.balance
-  }
 
   object Server {
     def newStack[Req, Rsp]: Stack[ServiceFactory[Req, Rsp]] =

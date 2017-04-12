@@ -7,6 +7,7 @@ import com.twitter.finagle.buoyant.{DstBindingFactory, PathMatcher, TlsClientPre
 import com.twitter.finagle.buoyant.TlsClientPrep.{TransportSecurity, Trust}
 import com.twitter.finagle.client.DefaultPool
 import com.twitter.finagle.service._
+import com.twitter.util.Duration
 import io.buoyant.config.PolymorphicConfig
 import scala.util.control.NoStackTrace
 
@@ -23,6 +24,7 @@ trait ClientConfig {
   var failFast: Option[Boolean] = None
   var failureAccrual: Option[FailureAccrualConfig] = None
   var requestAttemptTimeoutMs: Option[Int] = None
+  var requeueBudget: Option[RetryBudgetConfig] = None
 
   @JsonIgnore
   def params(vars: Map[String, String]): Stack.Params = Stack.Params.empty
@@ -31,6 +33,15 @@ trait ClientConfig {
     .maybeWith(hostConnectionPool.map(_.param))
     .maybeWith(requestAttemptTimeoutMs.map(timeout => TimeoutFilter.Param(timeout.millis)))
     .maybeWith(failFast.map(FailFastFactory.FailFast(_))) +
+    requeueBudget.map { b =>
+      Retries.Budget(
+        b.mk,
+        // We use an empty backoff for Retries.Budget, since this informs
+        // Requeues are explicitly for Nacks and non-application-level failures,
+        // and so we want to reenqueue these as quickly as possible.
+        Backoff.const(Duration.Zero)
+      )
+    }.getOrElse(RetryBudgetConfig.defaultBudget) +
     FailureAccrualConfig.param(failureAccrual)
 }
 
