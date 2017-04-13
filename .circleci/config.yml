@@ -22,11 +22,20 @@ jobs:
       # container, this step sets up a remote docker environment for us.
       - setup_remote_docker
 
+      # cat the entire contents of the project/ directory, to be used in cache
+      # keys.
+      - run:
+          name: Generate cache seeds
+          command: |
+            set -x
+            find ~/linkerd/project/ -type f -exec cat {} \; > project-seed.txt
+
       # Restore build dependencies and downloaded files from the save_cache
-      # step. We use LinkerdBuild.scala as a proxy for Scala dependency changes,
-      # and package.json as a proxy for JavaScript dependency changes.
+      # step. We use project-seed.txt, generated from the entire contents of the
+      # project/ directory, as a proxy for Scala dependency changes. We use
+      # package.json as a proxy for JavaScript dependency changes.
       - restore_cache:
-          key: linkerd-{{ checksum "project/LinkerdBuild.scala" }}-{{ checksum "admin/src/main/resources/io/buoyant/admin/package.json" }}
+          key: linkerd-{{ checksum "project-seed.txt" }}-{{ checksum "admin/src/main/resources/io/buoyant/admin/package.json" }}
 
       # Install Docker client to enable running commands on the remote Docker,
       # set up above.
@@ -98,7 +107,7 @@ jobs:
       # Save downloaded files and build dependencies, keyed off of files most
       # relevant to dependency changes.
       - save_cache:
-          key: linkerd-{{ checksum "project/LinkerdBuild.scala" }}-{{ checksum "admin/src/main/resources/io/buoyant/admin/package.json" }}
+          key: linkerd-{{ checksum "project-seed.txt" }}-{{ checksum "admin/src/main/resources/io/buoyant/admin/package.json" }}
           paths:
             - "docker-17.03.0-ce.tgz"
             - "node-v6.10.2-linux-x64.tar.xz"
