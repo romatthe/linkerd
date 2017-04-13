@@ -5,18 +5,18 @@ package h2
 import com.fasterxml.jackson.annotation.JsonIgnore
 import com.twitter.finagle.{Dtab, Path, Stack}
 import com.twitter.finagle.buoyant.Dst
-import com.twitter.finagle.buoyant.h2.{Headers => H2Headers, LinkerdHeaders, Request}
+import com.twitter.finagle.buoyant.h2.{Request, Headers => H2Headers}
 import com.twitter.util.Future
 import io.buoyant.router.H2
 import io.buoyant.router.RoutingFactory._
 
-class HeaderPathIdentifier(
+class PathIdentifier(
   header: String,
   segments: Option[Int],
   pfx: Path,
   baseDtab: () => Dtab
 ) extends Identifier[Request] {
-  import HeaderPathIdentifier._
+  import PathIdentifier._
 
   private[this] val identifyPath: Request => Future[RequestIdentification[Request]] =
     segments match {
@@ -59,7 +59,7 @@ class HeaderPathIdentifier(
     identifyPath(req)
 }
 
-object HeaderPathIdentifier {
+object PathIdentifier {
 
   case class Header(name: String)
   implicit object Header extends Stack.Param[Header] {
@@ -76,7 +76,7 @@ object HeaderPathIdentifier {
     val Segments(segments) = params[Segments]
     val DstPrefix(pfx) = params[DstPrefix]
     val BaseDtab(baseDtab) = params[BaseDtab]
-    new HeaderPathIdentifier(header, segments, pfx, baseDtab)
+    new PathIdentifier(header, segments, pfx, baseDtab)
   }
 
   val param = H2.Identifier(mk)
@@ -90,7 +90,7 @@ object HeaderPathIdentifier {
   }
 }
 
-class HeaderPathIdentifierConfig extends H2IdentifierConfig {
+class PathIdentifierConfig extends H2IdentifierConfig {
   var header: Option[String] = None
   var segments: Option[Int] = None
 
@@ -101,15 +101,15 @@ class HeaderPathIdentifierConfig extends H2IdentifierConfig {
         throw new IllegalArgumentException("`segments` must be >= 1")
       case segments =>
         val prms = params
-          .maybeWith(header.map { h => HeaderPathIdentifier.Header(h.toLowerCase) })
-          .maybeWith(segments.map { n => HeaderPathIdentifier.Segments(Some(n)) })
-        HeaderPathIdentifier.mk(prms)
+          .maybeWith(header.map { h => PathIdentifier.Header(h.toLowerCase) })
+          .maybeWith(segments.map { n => PathIdentifier.Segments(Some(n)) })
+        PathIdentifier.mk(prms)
     }
 }
 
-class HeaderPathIdentifierInitializer extends IdentifierInitializer {
-  val configClass = classOf[HeaderPathIdentifierConfig]
-  override val configId = "io.l5d.headerPath"
+class PathIdentifierInitializer extends IdentifierInitializer {
+  val configClass = classOf[PathIdentifierConfig]
+  override val configId = "io.l5d.h2.path"
 }
 
-object HeaderPathIdentifierInitializer extends HeaderPathIdentifierInitializer
+object PathIdentifierInitializer extends PathIdentifierInitializer

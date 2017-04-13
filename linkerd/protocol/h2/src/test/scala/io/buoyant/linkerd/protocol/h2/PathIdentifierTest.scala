@@ -7,12 +7,12 @@ import io.buoyant.router.RoutingFactory._
 import io.buoyant.test.Awaits
 import org.scalatest.FunSuite
 
-class HeaderPathIdentifierTest extends FunSuite with Awaits {
+class PathIdentifierTest extends FunSuite with Awaits {
 
   test("identifies requests by header, without segment limit") {
     val baseDtab = Dtab.read("/pfx => /other")
     val localDtab = Dtab.read("/pfx => /another")
-    val identifier = new HeaderPathIdentifier(Headers.Path, None, Path.Utf8("pfx"), () => baseDtab)
+    val identifier = new PathIdentifier(Headers.Path, None, Path.Utf8("pfx"), () => baseDtab)
     val req0 = Request("http", Method.Get, "wacky", "/one/two", Stream.empty())
 
     Dtab.local = localDtab
@@ -28,7 +28,7 @@ class HeaderPathIdentifierTest extends FunSuite with Awaits {
   test("identifies requests by header, with segment limit") {
     val baseDtab = Dtab.read("/pfx => /other")
     val localDtab = Dtab.read("/pfx => /another")
-    val identifier = new HeaderPathIdentifier(Headers.Path, Some(1), Path.Utf8("pfx"), () => baseDtab)
+    val identifier = new PathIdentifier(Headers.Path, Some(1), Path.Utf8("pfx"), () => baseDtab)
     val req0 = Request("http", Method.Get, "wacky", "/one/two", Stream.empty())
 
     Dtab.local = localDtab
@@ -44,7 +44,7 @@ class HeaderPathIdentifierTest extends FunSuite with Awaits {
   test("ignores url params") {
     val baseDtab = Dtab.read("/pfx => /other")
     val localDtab = Dtab.read("/pfx => /another")
-    val identifier = new HeaderPathIdentifier(Headers.Path, None, Path.Utf8("pfx"), () => baseDtab)
+    val identifier = new PathIdentifier(Headers.Path, None, Path.Utf8("pfx"), () => baseDtab)
     val req0 = Request("http", Method.Get, "wacky", "/one/two/?three=four", Stream.empty())
 
     Dtab.local = localDtab
@@ -60,7 +60,7 @@ class HeaderPathIdentifierTest extends FunSuite with Awaits {
   test("does not identify requests by header, with path shorter than segment limit") {
     val baseDtab = Dtab.read("/pfx => /other")
     val localDtab = Dtab.read("/pfx => /another")
-    val identifier = new HeaderPathIdentifier(Headers.Path, Some(3), Path.Utf8("pfx"), () => baseDtab)
+    val identifier = new PathIdentifier(Headers.Path, Some(3), Path.Utf8("pfx"), () => baseDtab)
     val req0 = Request("http", Method.Get, "wacky", "/one/two", Stream.empty())
 
     Dtab.local = localDtab
@@ -70,7 +70,7 @@ class HeaderPathIdentifierTest extends FunSuite with Awaits {
   test("identifies requests with arbitrary header") {
     val baseDtab = Dtab.read("/pfx => /other")
     val localDtab = Dtab.read("/pfx => /another")
-    val identifier = new HeaderPathIdentifier("lolz", None, Path.Utf8("pfx"), () => baseDtab)
+    val identifier = new PathIdentifier("lolz", None, Path.Utf8("pfx"), () => baseDtab)
     val req0 = Request("http", Method.Get, "wacky", "/one/two", Stream.empty())
     req0.headers.set("lolz", "/rofl/hah")
 
@@ -87,7 +87,7 @@ class HeaderPathIdentifierTest extends FunSuite with Awaits {
   test("does not identify requests by header if header missing") {
     val baseDtab = Dtab.read("/pfx => /other")
     val localDtab = Dtab.read("/pfx => /another")
-    val identifier = new HeaderPathIdentifier("lolz", None, Path.Utf8("pfx"), () => baseDtab)
+    val identifier = new PathIdentifier("lolz", None, Path.Utf8("pfx"), () => baseDtab)
     val req0 = Request("http", Method.Get, "wacky", "/one/two", Stream.empty())
 
     Dtab.local = localDtab
@@ -97,7 +97,7 @@ class HeaderPathIdentifierTest extends FunSuite with Awaits {
   test("does not identify requests by header if header missing and segments required") {
     val baseDtab = Dtab.read("/pfx => /other")
     val localDtab = Dtab.read("/pfx => /another")
-    val identifier = new HeaderPathIdentifier("lolz", Some(1), Path.Utf8("pfx"), () => baseDtab)
+    val identifier = new PathIdentifier("lolz", Some(1), Path.Utf8("pfx"), () => baseDtab)
     val req0 = Request("http", Method.Get, "wacky", "/one/two", Stream.empty())
 
     Dtab.local = localDtab
